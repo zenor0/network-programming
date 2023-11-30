@@ -45,8 +45,8 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
     show_msg(INFO_TYPE, "Connected to the server %s:%s\n", argv[1], argv[2]);
-
-
+    // establish connection
+    send(client_socket, create_request_as("hi", DEALER_FLAG), sizeof(proto_hdr), 0);
 
     printf("Input (\\ for command): ");
     while (1) {
@@ -111,10 +111,11 @@ int main(int argc, char *argv[]) {
             }
 
             // Display the converted string received from the server
-            show_msg(INFO_TYPE, "[ %dms ] Received from server: %s\n"
+            putchar('\n');
+            show_msg(INFO_TYPE, "[ %dms ] Received from server:\n %s\n"
                     , systime_delta(recv_buffer.timestamp), recv_buffer.msg);
                 
-            printf("Input (\\ for command): ");
+            printf("Input factor and punish_score(\\ for command): ");
             // show_msg(DEBUG_TYPE, "raw info\n");
             // print_proto_info(recv_buffer);
         }

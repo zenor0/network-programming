@@ -17,7 +17,7 @@
 #define EMPTY_SOCKET_SIGN -1
 
 
-
+void disconnect_clients(int client_sockets[], int socket_fd);
 int disconnect_all_clients(int client_sockets[]);
 void show_client_list(int client_sockets[]);
 void show_manual();
@@ -74,6 +74,12 @@ int main(int argc, char *argv[]) {
     show_msg(INFO_TYPE, "Server is running on %s:%s...\n", inet_ntoa(server_addr.sin_addr), argv[1]);
 
     GameSession game_session;
+    PlayerSession *player_list[MAX_CLIENTS];
+    int player_count = 0;
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        player_list[i] = (PlayerSession *)malloc(sizeof(PlayerSession));
+        init_player_session(player_list[i], EMPTY_SOCKET_SIGN);
+    }
     while (1) {
         FD_ZERO(&read_fds);
         FD_SET(server_socket, &read_fds);
@@ -114,6 +120,16 @@ int main(int argc, char *argv[]) {
 
             if (strcmp(input_buffer, "\\help") == 0) {
                 show_manual();
+                continue;
+            }
+             
+            if (strcmp(input_buffer, "\\kick") == 0) {
+                int last_player = find_last_score(player_list, MAX_CLIENTS);
+                send(last_player, create_response("You have been kicked by system."), sizeof(proto_hdr), 0);
+                show_msg(INFO_TYPE, "Kicked client %d\n", last_player);
+                PlayerSession * session = find_player_session(player_list, MAX_CLIENTS, last_player);
+                init_player_session(session, EMPTY_SOCKET_SIGN);
+                disconnect_clients(client_sockets, last_player);
                 continue;
             }
 
@@ -162,6 +178,17 @@ int main(int argc, char *argv[]) {
                 show_msg(DEBUG_TYPE, "dealer entered the game\n");
                 game_session.dealer_fd = new_socket;
             }
+            if (strcmp(client_request.flag, PLAYER_FLAG) == 0) {
+                show_msg(DEBUG_TYPE, "player entered the game\n");
+
+                for (int i = 0; i < MAX_CLIENTS; ++i) {
+                    if (player_list[i]->fd == EMPTY_SOCKET_SIGN) {
+                        // show_msg(DEBUG_TYPE, "init: %d\n", i);
+                        init_player_session(player_list[i], new_socket);
+                        break;
+                    }
+                }
+            }
             // Add new socket to the array of sockets
             // (Append new client if client_sockets isn't nil)
             for (int i = 0; i < MAX_CLIENTS; ++i) {
@@ -203,14 +230,13 @@ int main(int argc, char *argv[]) {
 
                     // player logic
                     int guess_num = atoi(recv_buffer.msg);
-
-                    //handle logic
                     int buf;
-                    if ((buf = guess_number(&game_session, guess_num) )== 0) {
+                    PlayerSession * curr_player = find_player_session(player_list, MAX_CLIENTS, client_fd);
+                    if ((buf = guess_number(&game_session, curr_player, guess_num) )== 0) {
                         send(client_fd, create_response("You win!"), sizeof(proto_hdr), 0);
-
+                
                         char score_str[100];
-                        sprintf(score_str, "Your score is: %d", game_session.score);
+                        sprintf(score_str, "Your score is: %d", curr_player->score);
                         send(client_fd, create_response(score_str), sizeof(proto_hdr), 0);
                         if (game_session.dealer_fd != -1) {
                             send(game_session.dealer_fd, create_response(score_str), sizeof(proto_hdr), 0);
@@ -225,19 +251,20 @@ int main(int argc, char *argv[]) {
                         send(client_fd, create_response("Too big!"), sizeof(proto_hdr), 0);
                     }
 
-                    show_msg(DEBUG_TYPE, "current score: %d\n", game_session.score);
+                    show_msg(DEBUG_TYPE, "current score: %d\n", curr_player->score);
                     show_msg(INFO_TYPE, "Client %s:%d guessed the number %d in %d times.\n"
                             , inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port)
-                            , game_session.number, game_session.guess_count);
+                            , game_session.number, curr_player->guess_count);
 
                     // send current game state to dealer if it exists
                     if (game_session.dealer_fd != -1) {
                         char report_info[200];
                         sprintf(report_info, "Client %s:%d guessed the number %d in %d times.\n"
                             , inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port)
-                            , game_session.number, game_session.guess_count);
+                            , game_session.number, curr_player->guess_count);
                         send(game_session.dealer_fd, create_response(report_info), sizeof(proto_hdr), 0);
                     }
+
                 }
             }
         }
